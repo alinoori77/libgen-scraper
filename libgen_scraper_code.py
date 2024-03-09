@@ -1,21 +1,42 @@
 import requests  # Importing requests library for making HTTP requests
 from bs4 import BeautifulSoup  # Importing BeautifulSoup for parsing HTML
-import sqlite3  # Importing sqlite3 for working with SQLite database
-import json  # Importing json module for working with JSON data
 import pandas as pd  # Importing pandas for data manipulation and analysis
 import os  # Importing os module for interacting with the operating system
 from datetime import datetime  # Importing datetime for working with dates and times
 import argparse  # Importing argparse for parsing command-line arguments
-import zipfile  # Importing zipfile for working with zip files
+from database_manager import DatabaseManager
+import sample_settings
+import peewee
 
+
+
+database_manager = DatabaseManager(
+    database_name=sample_settings.DATABASE['name'],
+    user=sample_settings.DATABASE['user'],
+    password=sample_settings.DATABASE['password'],
+    host=sample_settings.DATABASE['host'],
+    port=sample_settings.DATABASE['port'],
+)
+
+class Author(peewee.Model):
+    title = peewee.CharField(max_length=2048, null=False, verbose_name='Title')
+    class Meta:
+        database = database_manager.db
+
+
+class Book(peewee.Model):
+    Name = peewee.CharField(max_length=2048, null=False, verbose_name='Title')
+    Author = peewee.ForeignKeyField(model=Author, null=False, verbose_name='Author')
+    Publisher = peewee.CharField(max_length=2048, null=False, verbose_name='Publisher')
+    language = peewee.CharField(max_length=2048, null=False, verbose_name='language')
+    p_a_g_e = peewee.CharField(max_length=2048, null=False, verbose_name='Pages')
+
+
+    class Meta:
+        database = database_manager.db
 
 def scrape_books(book_name):
-    """
-    Function to scrape book data from Libgen based on the provided book name.
 
-    :param book_name: Name of the book to search for
-    :return: List of dictionaries containing book information
-    """
     page_number = 1
     book_results = list()  # Initialize an empty list to store book information
 
@@ -36,6 +57,7 @@ def scrape_books(book_name):
                 if cells[1].text.strip() == "Author(s)":
                     continue  # Skipping the header row
                 # Extracting book information from each cell and storing it in a dictionary
+
                 book_info = {
                     'ID': cells[0].text.strip(),
                     'author': cells[1].text.strip(),
@@ -53,81 +75,64 @@ def scrape_books(book_name):
 
 
 def save_to_database(books):
-    """
-    Function to save scraped book data into SQLite database.
+    database_manager.create_tables(models=[Author, Book])
 
-    :param books: List of dictionaries containing book information
-    :return: None
-    """
-    conn = sqlite3.connect('book_data.db')  # Connecting to SQLite database
-    c = conn.cursor()  # Creating a cursor object for executing SQL queries
-
-    # Creating 'authors' table if it doesn't exist
-    c.execute('''CREATE TABLE IF NOT EXISTS authors (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT)''')
-
-    # Creating 'books' table if it doesn't exist
-    c.execute('''CREATE TABLE IF NOT EXISTS books (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT,
-                    author_id INTEGER,
-                    Publisher TEXT,
-                    Year TEXT ,
-                    Pages TEXT ,
-                    language TEXT ,
-                    FOREIGN KEY (author_id) REFERENCES authors(id))''')
-
-    # Creating 'search_results' table if it doesn't exist
-    c.execute('''CREATE TABLE IF NOT EXISTS search_results (
-                    id INTEGER PRIMARY KEY,
-                    result TEXT)''')
-
-    # Iterating through each book in the list and saving its information into the database
     for book in books:
-        author_id = c.execute("SELECT id FROM authors WHERE name=?", (book['author'],)).fetchone()
-        if not author_id:
-            c.execute("INSERT INTO authors (name) VALUES (?)", (book['author'],))
-            author_id = c.lastrowid
-        else:
-            author_id = author_id[0]
-
-        book_id = c.execute("SELECT id FROM books WHERE name=?", (book['title'],)).fetchone()
-        if not book_id:
-            c.execute("INSERT INTO books (name, author_id , Publisher ,Year ,Pages ,language) VALUES (?, ? ,?,?,?,?)",
-                      (book['title'], author_id, book['Publisher'], book['Year'], book['Pages'], book['language']))
-            book_id = c.lastrowid
-        else:
-            book_id = book_id[0]
-
-        conn.commit()  # Committing the transaction to save changes into the database
-
-    conn.close()  # Closing the database connection
+        author, _ = Author.get_or_create(title=book['author'])
+        Book.get_or_create(Name =str(book["title"]),Author=author ,Publisher=str(book['Publisher']),p_a_g_e=str(book['Pages']),language=str(book['language']))
 
 
 def export_data(format, book_name):
-    """
-    Function to export scraped book data in the specified format.
-
-    :param format: Export format (xls/json/csv)
-    :param book_name: Name of the book
-    :return: None
-    """
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # Getting current date and time
     folder_name = f"{current_time}_{book_name}"  # Creating folder name based on current time and book name
     os.makedirs(folder_name, exist_ok=True)  # Creating folder to store exported files
 
-    conn = sqlite3.connect('book_data.db')  # Connecting to SQLite database
-    df = pd.read_sql_query("SELECT * FROM books", conn)  # Reading data from 'books' table into a DataFrame
-    conn.close()  # Closing the database connection
 
+
+
+    
     # Exporting data based on the specified format
     if format == 'xls':
+
+        # Fetch data from the database where post title
+        query = Book.select().where(Book.Name == book_name)
+
+        # Convert the query result to a pandas DataFrame
+        df = pd.DataFrame(list(query.dicts()))
+
+        # Export DataFrame to an Excel file
         df.to_excel(os.path.join(folder_name, f"{book_name}.xlsx"), index=False)
+
+        # Close the database connection
+        database_manager.db.close()
+
     elif format == 'json':
-        df.to_json(os.path.join(folder_name, f"{book_name}.json"), orient='records')
+
+        # Fetch data from the database where post title 
+        query = Book.select().where(Book.Name == book_name)
+
+        # Convert the query result to a pandas DataFrame
+        df = pd.DataFrame(list(query.dicts()))
+
+        # Export DataFrame to an Excel file
+        df.to_json(os.path.join(folder_name, f"{book_name}.json"), index=False)
+
+        # Close the database connection
+        database_manager.db.close()
+        
     elif format == 'csv':
+
+        # Fetch data from the database where post 
+        query = Book.select().where(Book.Name == book_name)
+        # Convert the query result to a pandas DataFrame
+        df = pd.DataFrame(list(query.dicts()))
+
+        # Export DataFrame to an Excel file
         df.to_csv(os.path.join(folder_name, f"{book_name}.csv"), index=False)
+
+        # Close the database connection
+        database_manager.db.close()
+
 
 
 def main():
@@ -136,16 +141,21 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Scrape book data from Libgen and export it.")
     parser.add_argument("book_name", type=str, help="Name of the book")
-    parser.add_argument("export_format", type=str, choices=['xls', 'json', 'csv'],
-                        help="Export format (xls/json/csv)")
+    parser.add_argument("export_format", type=str, choices=['xls', 'json', 'csv'],help="Export format (xls/json/csv)")
     args = parser.parse_args()
 
     book_name = args.book_name  # Retrieving book name from command-line arguments
     books = scrape_books(book_name)  # Scraping book data from Libgen
     save_to_database(books)  # Saving scraped data into SQLite database
 
-    export_format = args.export_format  # Retrieving export format from command-line arguments
-    export_data(export_format, book_name)  # Exporting scraped data in the specified format
+
+
+
+
+
+
+    # export_format = args.export_format  # Retrieving export format from command-line arguments
+    # export_data(export_format, book_name)  # Exporting scraped data in the specified format
 
 
 if __name__ == "__main__":
