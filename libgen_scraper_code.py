@@ -1,9 +1,9 @@
-import requests  # Importing requests library for making HTTP requests
-from bs4 import BeautifulSoup  # Importing BeautifulSoup for parsing HTML
-import pandas as pd  # Importing pandas for data manipulation and analysis
-import os  # Importing os module for interacting with the operating system
-from datetime import datetime  # Importing datetime for working with dates and times
-import argparse  # Importing argparse for parsing command-line arguments
+import requests 
+from bs4 import BeautifulSoup
+import pandas as pd  
+import os  
+from datetime import datetime  
+import argparse  
 from database_manager import DatabaseManager
 import sample_settings
 import peewee
